@@ -185,6 +185,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
 .sheets-dot.ok{background:var(--green);box-shadow:0 0 5px var(--green)}
 .sheets-dot.err{background:var(--red)}
 .sheets-dot.loading{background:var(--yellow);animation:blink 1s infinite}
+.day-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.day-cell{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px}
+.day-cell-lbl{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--muted);font-family:var(--fh);margin-bottom:5px}
+.day-cell-val{font-family:var(--fh);font-size:22px;font-weight:900}
+.day-history{display:flex;flex-direction:column;gap:4px;max-height:320px;overflow-y:auto}
+.day-row{display:flex;align-items:center;gap:10px;background:var(--bg3);border-radius:6px;padding:7px 12px;font-size:13px}
+.day-num{font-family:var(--fh);font-size:15px;font-weight:900;color:var(--muted);width:50px;flex-shrink:0}
+.day-score{font-family:var(--fh);font-size:18px;font-weight:900;width:42px;text-align:right}
 </style>
 </head>
 <body>
@@ -373,6 +381,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
           <button class="adm-tab" onclick="admTab('consultoras',this)">CONSULTORAS</button>
           <button class="adm-tab" onclick="admTab('unidades',this)">UNIDADES</button>
           <button class="adm-tab" onclick="admTab('metas',this)">METAS</button>
+          <button class="adm-tab" onclick="admTab('dia',this)">REGISTRAR DIA</button>
           <button class="adm-tab" onclick="admTab('sheets',this)">GOOGLE SHEETS</button>
           <button class="adm-tab" onclick="admTab('gp',this)">FECHAR GP</button>
         </div>
@@ -482,6 +491,35 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
         </div>
 
         <!-- MUDANÇA 7: GOOGLE SHEETS -->
+        <!-- REGISTRAR DIA -->
+        <div class="adm-section" id="adm-dia">
+          <div class="adm-grid">
+            <div class="ac">
+              <div class="at">REGISTRAR DIA DA CONSULTORA</div>
+              <div class="ar"><div class="al">CONSULTORA</div><select class="asel" id="dia-pilot" onchange="loadDiaHistory()"></select></div>
+              <div class="ar"><div class="al">DIA DO MÊS (1-30)</div><input class="ai" id="dia-num" type="number" min="1" max="30" placeholder="Ex: 15"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+                <div><div class="al" style="width:100%;margin-bottom:4px">LEADS</div><input class="ai" id="dia-leads" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">LEADS IND.</div><input class="ai" id="dia-linds" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">CONSULTORIAS</div><input class="ai" id="dia-cons" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">MATRÍCULAS</div><input class="ai" id="dia-mats" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">FAT. BRUTO R$</div><input class="ai" id="dia-fat" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">FAT. COMISS. R$</div><input class="ai" id="dia-fatc" type="number" value="0"></div>
+              </div>
+              <button class="savbtn" onclick="saveDia()">SALVAR DIA ▶</button>
+              <div class="sm" id="sm-dia"></div>
+              <div style="margin-top:14px;padding:10px;background:var(--bg3);border-radius:6px;font-size:12px;color:var(--muted);font-family:var(--fb)">
+                <div style="color:var(--green);font-family:var(--fh);font-weight:700;font-size:12px;letter-spacing:1px;margin-bottom:4px">COMO FUNCIONA</div>
+                <div>Os dados de cada dia são acumulados automaticamente no total da consultora. A <b style="color:var(--yellow)">Última Volta</b> mostra o score do dia mais recente registrado. O gráfico de telemetria mostra o dia a dia do mês.</div>
+              </div>
+            </div>
+            <div class="ac">
+              <div class="at">HISTÓRICO DE DIAS — <span id="dia-pilot-name" style="color:var(--green)">SELECIONE UMA CONSULTORA</span></div>
+              <div id="dia-history-content"><div style="color:var(--muted);font-family:var(--fm);font-size:13px">Selecione uma consultora para ver o histórico.</div></div>
+            </div>
+          </div>
+        </div>
+
         <div class="adm-section" id="adm-sheets">
           <div class="adm-grid">
             <div class="ac">
@@ -585,7 +623,7 @@ async function loadFromDB(){
           leads:p.leads||0,leadsInd:p.leads_ind||0,cons:p.cons||0,mats:p.mats||0,
           fat:parseFloat(p.fat)||0,fatC:parseFloat(p.fat_c)||0,
           ultVolta:p.ult_volta||0,gpPts:p.gp_pts||0,totalPts:p.total_pts||0,
-          laps:p.laps||[0,0,0,0,0]};
+          laps:p.laps||[0,0,0,0,0],dailyRecords:{}};
       });
     }
     var mData=await dbGet('metas');
@@ -707,7 +745,7 @@ function initPilots(){
   Object.keys(raw).forEach(function(k){
     var r=genRandom();var d=raw[k];
     var base=ri(10,40);
-    pilots[k]=Object.assign({},d,r,{
+    pilots[k]=Object.assign({},d,r,{dailyRecords:{},
       totalPts:0,gpPts:0,
       laps:[base,base+ri(5,15),base+ri(15,25),base+ri(25,40)]
     });
@@ -891,7 +929,17 @@ function enter(){
   } else {
     document.getElementById('upill').textContent=pilots[CU].name.split(' ')[0];
     go('ck',document.getElementById('nb-ck'));
-    setTimeout(function(){renderCockpit();},150);
+    // Load daily records for this pilot
+    loadDailyFromDB(CU).then(function(records){
+      dailyRecords[CU]=records;
+      if(Object.keys(records).length>0){
+        var allDays=Object.values(records);
+        var p=pilots[CU];
+        var wave=[];for(var i=1;i<=30;i++){var dr=records[i];wave.push(dr?calcDayScore(dr):0);}
+        p.dailyWave=wave;
+      }
+      setTimeout(function(){renderCockpit();},150);
+    });
   }
   buildHBar();buildGPHdr();
 }
@@ -921,12 +969,131 @@ function go(name,btn){
   if(name==='eq')setTimeout(function(){buildEq();},80);
 }
 
+// DAILY RECORDS
+var dailyRecords={}; // {pilotKey: {day: {leads,linds,cons,mats,fat,fatc}}}
+
+function calcDayScore(day){
+  var ml=parseInt(document.getElementById('m-l').value)||300;
+  var mli=parseInt(document.getElementById('m-li').value)||150;
+  var mc=parseInt(document.getElementById('m-c').value)||50;
+  var mm=parseInt(document.getElementById('m-m').value)||20;
+  var mtl=parseFloat(document.getElementById('m-txl').value)||20;
+  var mtc=parseFloat(document.getElementById('m-txc').value)||40;
+  var mf=parseInt(document.getElementById('m-f').value)||80000;
+  var mfc=parseInt(document.getElementById('m-fc').value)||70000;
+  var ptL=Math.floor(day.leads/(ml/10));
+  var ptLi=Math.floor(day.linds/(mli/10));
+  var ptC=Math.floor(day.cons/(mc/10));
+  var ptM=Math.floor(day.mats/(mm/10));
+  var txl=day.cons>0&&day.leads>0?(day.cons/day.leads*100):0;
+  var txc=day.mats>0&&day.cons>0?(day.mats/day.cons*100):0;
+  var ptTxL=txl>=mtl?20:0;
+  var ptTxC=txc>=mtc?20:0;
+  var ptF=Math.floor(day.fat/(mf/10));
+  var ptFc=Math.floor(day.fatc/(mfc/10));
+  return ptL+ptLi+ptC+ptM+ptTxL+ptTxC+ptF+ptFc;
+}
+
+async function loadDailyFromDB(pilotKey){
+  var res=await supa.from('daily_records').select('*').eq('pilot_id',pilotKey);
+  if(res.error){console.error(res.error);return {};}
+  var records={};
+  (res.data||[]).forEach(function(r){
+    records[r.day]={leads:r.leads,linds:r.leads_ind,cons:r.cons,mats:r.mats,fat:parseFloat(r.fat)||0,fatc:parseFloat(r.fat_c)||0};
+  });
+  return records;
+}
+
+async function saveDia(){
+  var k=document.getElementById('dia-pilot').value;
+  var day=parseInt(document.getElementById('dia-num').value);
+  if(!k||!pilots[k]){document.getElementById('sm-dia').textContent='Selecione uma consultora';return;}
+  if(!day||day<1||day>30){document.getElementById('sm-dia').textContent='Dia inválido (1-30)';return;}
+  var dayData={
+    leads:parseInt(document.getElementById('dia-leads').value)||0,
+    linds:parseInt(document.getElementById('dia-linds').value)||0,
+    cons:parseInt(document.getElementById('dia-cons').value)||0,
+    mats:parseInt(document.getElementById('dia-mats').value)||0,
+    fat:parseInt(document.getElementById('dia-fat').value)||0,
+    fatc:parseInt(document.getElementById('dia-fatc').value)||0
+  };
+  // Save to DB
+  var res=await supa.from('daily_records').upsert({
+    pilot_id:k,day:day,
+    leads:dayData.leads,leads_ind:dayData.linds,
+    cons:dayData.cons,mats:dayData.mats,
+    fat:dayData.fat,fat_c:dayData.fatc
+  },{onConflict:'pilot_id,day'});
+  if(res.error){console.error(res.error);document.getElementById('sm-dia').textContent='Erro ao salvar!';return;}
+  // Update local records
+  if(!dailyRecords[k])dailyRecords[k]={};
+  dailyRecords[k][day]=dayData;
+  // Recalculate pilot totals from all days
+  var allDays=Object.values(dailyRecords[k]);
+  var p=pilots[k];
+  p.leads=allDays.reduce(function(a,d){return a+(d.leads||0);},0);
+  p.leadsInd=allDays.reduce(function(a,d){return a+(d.linds||0);},0);
+  p.cons=allDays.reduce(function(a,d){return a+(d.cons||0);},0);
+  p.mats=allDays.reduce(function(a,d){return a+(d.mats||0);},0);
+  p.fat=allDays.reduce(function(a,d){return a+(d.fat||0);},0);
+  p.fatC=allDays.reduce(function(a,d){return a+(d.fatc||0);},0);
+  // Last volta = score of most recent day
+  var lastDay=Math.max.apply(null,Object.keys(dailyRecords[k]).map(Number));
+  p.ultVolta=calcDayScore(dailyRecords[k][lastDay]);
+  // Telemetry wave: array of 30 days
+  var wave=[];
+  for(var i=1;i<=30;i++){
+    var dr=dailyRecords[k][i];
+    wave.push(dr?calcDayScore(dr):0);
+  }
+  p.dailyWave=wave;
+  // Save pilot totals
+  await savePilotToDB(k);
+  document.getElementById('sm-dia').textContent='Dia '+day+' salvo! Score do dia: '+calcDayScore(dayData)+' pts ✓';
+  setTimeout(function(){document.getElementById('sm-dia').textContent='';},3000);
+  loadDiaHistory();
+}
+
+async function loadDiaHistory(){
+  var k=document.getElementById('dia-pilot').value;
+  if(!k||!pilots[k]){return;}
+  var p=pilots[k];
+  document.getElementById('dia-pilot-name').textContent=p.name;
+  // Load from DB
+  var records=await loadDailyFromDB(k);
+  dailyRecords[k]=records;
+  var days=Object.keys(records).map(Number).sort(function(a,b){return b-a;});
+  if(days.length===0){
+    document.getElementById('dia-history-content').innerHTML='<div style="color:var(--muted);font-family:var(--fm);font-size:13px">Nenhum dia registrado ainda.</div>';
+    return;
+  }
+  var col=pc(k);
+  var html='<div class="day-history">'+days.map(function(d){
+    var dr=records[d];var score=calcDayScore(dr);
+    var fc=score>=80?'var(--green)':score>=60?'var(--yellow)':'var(--red)';
+    return'<div class="day-row">'+
+      '<span class="day-num">DIA '+d+'</span>'+
+      '<span style="flex:1;font-family:var(--fm);font-size:11px;color:var(--muted)">L:'+dr.leads+' Li:'+dr.linds+' C:'+dr.cons+' M:'+dr.mats+'</span>'+
+      '<span style="font-family:var(--fm);font-size:11px;color:var(--green);margin-right:8px">R$'+Math.round((dr.fat+dr.fatc)/1000)+'k</span>'+
+      '<span class="day-score" style="color:'+fc+'">'+score+'</span>'+
+    '</div>';
+  }).join('')+'</div>';
+  document.getElementById('dia-history-content').innerHTML=html;
+}
+
+function refreshDiaSelect(){
+  var sel=document.getElementById('dia-pilot');
+  if(!sel)return;
+  sel.innerHTML=Object.keys(pilots).map(function(k){return'<option value="'+k+'">'+pilots[k].name+'</option>';}).join('');
+}
+
 function admTab(name,btn){
   document.querySelectorAll('.adm-section').forEach(function(s){s.classList.remove('on');});
   document.querySelectorAll('.adm-tab').forEach(function(b){b.classList.remove('on');});
   document.getElementById('adm-'+name).classList.add('on');btn.classList.add('on');
   if(name==='consultoras'||name==='dados')refreshAdmSelects();
   if(name==='unidades')renderUnitsList();
+  if(name==='dia'){refreshDiaSelect();loadDiaHistory();}
 }
 
 function buildGPHdr(){
@@ -979,12 +1146,19 @@ function buildMetrics(){
 
 function buildWave(){
   if(!CU||isAdm)return;
-  var p=pilots[CU];var col=pc(CU);var s=calcScore(p);
-  var labels=[];for(var i=1;i<=28;i++)labels.push(i);
-  var base=Math.max(s.total*0.5,1);
-  var data=labels.map(function(i){return Math.max(1,Math.round(base+Math.sin(i*0.7+1)*base*0.4+Math.random()*base*0.3));});
+  var p=pilots[CU];var col=pc(CU);
+  var labels=[];for(var i=1;i<=30;i++)labels.push(i);
+  var data;
+  if(p.dailyWave&&p.dailyWave.length===30){
+    data=p.dailyWave;
+  } else if(dailyRecords[CU]&&Object.keys(dailyRecords[CU]).length>0){
+    data=[];for(var i=1;i<=30;i++){var dr=dailyRecords[CU][i];data.push(dr?calcDayScore(dr):0);}
+  } else {
+    var s=calcScore(p);var base=Math.max(s.total*0.5,1);
+    data=labels.map(function(i){return Math.max(0,Math.round(base+Math.sin(i*0.7+1)*base*0.4+Math.random()*base*0.3));});
+  }
   if(wCI)wCI.destroy();
-  wCI=new Chart(document.getElementById('waveC').getContext('2d'),{type:'line',data:{labels:labels,datasets:[{data:data,borderColor:col,backgroundColor:col+'15',borderWidth:2,pointRadius:2,pointBackgroundColor:col,tension:.4,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#444',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}},y:{ticks:{color:'#444',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}}}}});
+  wCI=new Chart(document.getElementById('waveC').getContext('2d'),{type:'line',data:{labels:labels,datasets:[{data:data,borderColor:col,backgroundColor:col+'15',borderWidth:2,pointRadius:2,pointBackgroundColor:col,tension:.4,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#444',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}},y:{min:0,ticks:{color:'#444',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}}}}});
 }
 
 function buildComp(){
