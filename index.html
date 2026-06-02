@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -210,16 +211,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
       <select class="linp" id="psel"><option value="">Selecione sua consultora...</option></select>
       <input class="linp" type="password" id="ppw" placeholder="Senha"/>
       <button class="lbtn" onclick="loginP()">ENTRAR NA CORRIDA ▶</button>
-      <div class="hint-box"><div class="hint-row">Senha: <b>vox2026</b></div></div>
     </div>
     <div id="lf-a" style="display:none">
       <input class="linp" type="text" id="au" placeholder="Usuário"/>
       <input class="linp" type="password" id="ap" placeholder="Senha"/>
       <button class="lbtn" onclick="loginA()">ACESSO ADMIN ▶</button>
-      <div class="hint-box">
-        <div class="hint-row">Usuário: <b>admin</b></div>
-        <div class="hint-row">Senha: <b>vox2026</b></div>
-      </div>
     </div>
     <div class="lerr" id="lerr"></div>
   </div>
@@ -299,7 +295,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
         <div class="chart-box">
           <div class="blk-sup">HISTÓRICO DE LAPS</div>
           <div class="blk-title">TENDÊNCIA DA TEMPORADA · TODOS OS PILOTOS</div>
-          <div style="position:relative;height:180px"><canvas id="lapsC"></canvas></div>
+          <div style="position:relative;height:240px"><canvas id="lapsC"></canvas></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" id="laps-leg"></div>
         </div>
       </div>
@@ -817,7 +813,7 @@ function enter(){
   } else {
     document.getElementById('upill').textContent=pilots[CU].name.split(' ')[0];
     go('ck',document.getElementById('nb-ck'));
-    setTimeout(function(){renderCockpit();},120);
+    setTimeout(function(){renderCockpit();},150);
   }
   buildHBar();buildGPHdr();
 }
@@ -889,15 +885,18 @@ function buildCKHdr(){
 
 function buildMetrics(){
   if(!CU||isAdm)return;
-  var p=pilots[CU];var s=calcScore(p);
-  document.getElementById('ck-leads').textContent=p.leads;
-  document.getElementById('ck-inds').textContent=p.leadsInd;
-  document.getElementById('ck-cons').textContent=p.cons;
-  document.getElementById('ck-mats').textContent=p.mats;
-  document.getElementById('ck-fat').textContent='R$ '+p.fat.toLocaleString('pt-BR');
-  document.getElementById('ck-fatc').textContent='R$ '+p.fatC.toLocaleString('pt-BR');
-  document.getElementById('ck-txlxc').textContent=s.txl.toFixed(1)+'%';
-  document.getElementById('ck-txcxm').textContent=s.txc.toFixed(1)+'%';
+  var p=pilots[CU];
+  if(!p)return;
+  var s=calcScore(p);
+  var el=function(id){return document.getElementById(id);};
+  if(el('ck-leads'))el('ck-leads').textContent=p.leads;
+  if(el('ck-inds'))el('ck-inds').textContent=p.leadsInd;
+  if(el('ck-cons'))el('ck-cons').textContent=p.cons;
+  if(el('ck-mats'))el('ck-mats').textContent=p.mats;
+  if(el('ck-fat'))el('ck-fat').textContent='R$ '+p.fat.toLocaleString('pt-BR');
+  if(el('ck-fatc'))el('ck-fatc').textContent='R$ '+p.fatC.toLocaleString('pt-BR');
+  if(el('ck-txlxc'))el('ck-txlxc').textContent=s.txl.toFixed(1)+'%';
+  if(el('ck-txcxm'))el('ck-txcxm').textContent=s.txc.toFixed(1)+'%';
 }
 
 function buildWave(){
@@ -923,10 +922,12 @@ function buildComp(){
 
 function buildLaps(){
   var sorted=getSorted('ALL');
-  var labels=['S1','S2','S3','S4','Atual'];
-  var datasets=sorted.map(function(p){return{label:p.name.split(' ')[0],data:p.laps.slice(-5),borderColor:pc(p.key),backgroundColor:'transparent',borderWidth:2,pointRadius:3,pointBackgroundColor:pc(p.key),tension:.35};});
+  var mNames=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var labels=[];
+  for(var i=4;i>=0;i--){var idx=((curGP-i)%12+12)%12;labels.push(i===0?'Atual ('+mNames[curGP%12]+')':mNames[idx]);}
+  var datasets=sorted.map(function(p){return{label:p.name.split(' ')[0],data:p.laps.slice(-5),borderColor:pc(p.key),backgroundColor:pc(p.key)+'10',borderWidth:2.5,pointRadius:5,pointHoverRadius:7,pointBackgroundColor:pc(p.key),tension:.3,fill:false};});
   if(lapsCI)lapsCI.destroy();
-  lapsCI=new Chart(document.getElementById('lapsC').getContext('2d'),{type:'line',data:{labels:labels,datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#555',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}},y:{min:0,ticks:{color:'#555',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'},afterDraw:function(ch){
+  lapsCI=new Chart(document.getElementById('lapsC').getContext('2d'),{type:'line',data:{labels:labels,datasets:datasets},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{right:60}},plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return' '+c.dataset.label+': '+c.raw+' pts';}}}},scales:{x:{ticks:{color:'#777',font:{size:11,weight:'bold'},maxRotation:0},grid:{color:'rgba(255,255,255,0.05)'}},y:{min:0,ticks:{color:'#555',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'},afterDraw:function(ch){
     var c2=ch.ctx;
     [[60,'rgba(255,214,0,.3)','rgba(255,214,0,.7)'],[80,'rgba(0,230,118,.3)','rgba(0,230,118,.7)']].forEach(function(arr){
       var v=arr[0];var y=ch.scales.y.getPixelForValue(v);
