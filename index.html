@@ -190,6 +190,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
 <body>
 
 <!-- MODAL -->
+<div id="loading-overlay" style="position:fixed;inset:0;background:rgba(8,8,8,.97);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px"><div style="font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:900;letter-spacing:3px;color:#fff">FÓRMULA <span style="color:#00e676">VOX</span></div><div style="display:flex;gap:6px"><div style="width:10px;height:10px;border-radius:50%;background:#00e676;animation:pulse 1s infinite 0s"></div><div style="width:10px;height:10px;border-radius:50%;background:#00e676;animation:pulse 1s infinite .2s"></div><div style="width:10px;height:10px;border-radius:50%;background:#00e676;animation:pulse 1s infinite .4s"></div></div><div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:#555;letter-spacing:2px">CARREGANDO DADOS...</div></div>
+
 <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
   <div class="modal-card" id="modal-card">
     <div class="modal-close" onclick="closeModalDirect()">✕</div>
@@ -546,12 +548,87 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 var CU=null,isAdm=false,avatars={};
 var activeUnit='ALL';
 var history={};
 var wCI=null,compCI=null,lapsCI=null;
 var curGP=4;
+
+// SUPABASE
+var supa=supabase.createClient('https://yimvkpgfbwepsuqnsmhn.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpbXZrcGdmYndlcHN1cW5zbWhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzODQzNTEsImV4cCI6MjA5NTk2MDM1MX0.7fq8U6VvGujXJHCi_p8dY49BExLGNxv4C2I0gmUBYYQ');
+
+function showLoading(v){var el=document.getElementById('loading-overlay');if(el)el.style.display=v?'flex':'none';}
+
+async function dbGet(table){
+  var res=await supa.from(table).select('*');
+  if(res.error){console.error(table,res.error);return [];}
+  return res.data||[];
+}
+async function dbUpsert(table,obj){
+  var res=await supa.from(table).upsert(obj,{onConflict:'id'});
+  if(res.error)console.error('upsert',table,res.error);
+  return !res.error;
+}
+
+async function loadFromDB(){
+  showLoading(true);
+  try{
+    var uData=await dbGet('units');
+    if(uData.length>0){units={};uData.forEach(function(u){units[u.id]={color:u.color,label:u.label};});}
+    var pData=await dbGet('pilots');
+    if(pData.length>0){
+      pilots={};
+      pData.forEach(function(p){
+        pilots[p.id]={name:p.name,unit:p.unit,f1pilot:p.f1pilot,num:p.num,
+          leads:p.leads||0,leadsInd:p.leads_ind||0,cons:p.cons||0,mats:p.mats||0,
+          fat:parseFloat(p.fat)||0,fatC:parseFloat(p.fat_c)||0,
+          ultVolta:p.ult_volta||0,gpPts:p.gp_pts||0,totalPts:p.total_pts||0,
+          laps:p.laps||[0,0,0,0,0]};
+      });
+    }
+    var mData=await dbGet('metas');
+    if(mData.length>0){
+      var m=mData[0];curGP=m.cur_gp||4;
+      var sv=function(id,val){var e=document.getElementById(id);if(e)e.value=val;};
+      sv('m-l',m.meta_leads);sv('m-li',m.meta_leads_ind);sv('m-c',m.meta_cons);sv('m-m',m.meta_mats);
+      sv('m-txl',m.meta_txl);sv('m-txc',m.meta_txc);sv('m-f',m.meta_fat);sv('m-fc',m.meta_fat_c);
+    }
+    var hData=await dbGet('history');
+    var hpData=await dbGet('history_pilots');
+    if(hData.length>0){
+      hData.forEach(function(h){
+        var hp=hpData.filter(function(x){return x.history_id===h.id;});
+        var snap={};
+        hp.forEach(function(x){snap[x.pilot_id]={leads:x.leads,leadsInd:x.leads_ind,cons:x.cons,mats:x.mats,fat:x.fat,fatC:x.fat_c,gpPts:x.gp_pts,totalPts:x.total_pts,ultVolta:x.ult_volta};});
+        history[h.id]={gpName:h.gp_name,gpFlag:h.gp_flag,etapa:h.etapa,pilots:snap};
+      });
+    }
+  }catch(e){console.error('loadFromDB',e);}
+  showLoading(false);
+}
+
+async function savePilotToDB(k){
+  var p=pilots[k];if(!p)return;
+  var s=calcScore(p);p.gpPts=s.total;p.totalPts=s.total;
+  await dbUpsert('pilots',{id:k,name:p.name,unit:p.unit,f1pilot:p.f1pilot,num:p.num,
+    leads:p.leads,leads_ind:p.leadsInd,cons:p.cons,mats:p.mats,
+    fat:p.fat,fat_c:p.fatC,ult_volta:p.ultVolta,gp_pts:s.total,total_pts:s.total,laps:p.laps});
+}
+
+async function saveMetasToDB(){
+  await dbUpsert('metas',{id:1,
+    meta_leads:parseInt(document.getElementById('m-l').value)||300,
+    meta_leads_ind:parseInt(document.getElementById('m-li').value)||150,
+    meta_cons:parseInt(document.getElementById('m-c').value)||50,
+    meta_mats:parseInt(document.getElementById('m-m').value)||20,
+    meta_txl:parseFloat(document.getElementById('m-txl').value)||20,
+    meta_txc:parseFloat(document.getElementById('m-txc').value)||40,
+    meta_fat:parseInt(document.getElementById('m-f').value)||80000,
+    meta_fat_c:parseInt(document.getElementById('m-fc').value)||70000,
+    cur_gp:curGP});
+}
 var sheetConfig={id:'',name:'Faturamento',key:''};
 
 var F1_PILOTS=['Verstappen','Hamilton','Leclerc','Norris','Russell','Piastri','Alonso','Sainz','Perez','Stroll','Albon','Gasly','Ocon','Bottas','Zhou'];
@@ -1106,8 +1183,10 @@ function saveAdmP(){
   p.fatC=parseInt(document.getElementById('a-fc').value)||0;
   p.ultVolta=parseInt(document.getElementById('a-uv').value)||0;
   var s=calcScore(p);p.gpPts=s.total;p.totalPts=s.total;p.laps[p.laps.length-1]=s.total;
-  document.getElementById('sm1').textContent='Salvo: '+p.name+' · Score: '+s.total+' pts';
-  setTimeout(function(){document.getElementById('sm1').textContent='';},3000);
+  savePilotToDB(k).then(function(){
+    document.getElementById('sm1').textContent='Salvo: '+p.name+' · Score: '+s.total+' pts ✓';
+    setTimeout(function(){document.getElementById('sm1').textContent='';},3000);
+  });
 }
 
 function loadEditCons(){
@@ -1124,10 +1203,12 @@ function addConsultora(){
   if(!name){document.getElementById('sm-nc').textContent='Digite o nome';return;}
   var key=name.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'')+Date.now();
   pilots[key]={name:name,unit:unit,f1pilot:f1,num:num,leads:0,leadsInd:0,cons:0,mats:0,fat:0,fatC:0,ultVolta:0,gpPts:0,totalPts:0,laps:[0,0,0,0,0]};
-  buildUnitBar();refreshAdmSelects();
-  document.getElementById('sm-nc').textContent=name+' adicionada!';
-  document.getElementById('nc-name').value='';document.getElementById('nc-num').value='';
-  setTimeout(function(){document.getElementById('sm-nc').textContent='';},3000);
+  savePilotToDB(key).then(function(){
+    buildUnitBar();refreshAdmSelects();
+    document.getElementById('sm-nc').textContent=name+' adicionada! ✓';
+    document.getElementById('nc-name').value='';document.getElementById('nc-num').value='';
+    setTimeout(function(){document.getElementById('sm-nc').textContent='';},3000);
+  });
 }
 
 function editCons(){
@@ -1152,16 +1233,21 @@ function addUnit(){
   var color=document.getElementById('nu-color').value.trim()||'#888888';
   var label=document.getElementById('nu-label').value.trim()||'Equipe';
   if(!name){document.getElementById('sm-nu').textContent='Digite o nome';return;}
-  units[name]={color:color,label:label};buildUnitBar();refreshAdmSelects();renderUnitsList();
-  document.getElementById('sm-nu').textContent='Unidade '+name+' adicionada!';
-  document.getElementById('nu-name').value='';document.getElementById('nu-color').value='';document.getElementById('nu-label').value='';
-  setTimeout(function(){document.getElementById('sm-nu').textContent='';},3000);
+  units[name]={color:color,label:label};
+  dbUpsert('units',{id:name,color:color,label:label}).then(function(){
+    buildUnitBar();refreshAdmSelects();renderUnitsList();
+    document.getElementById('sm-nu').textContent='Unidade '+name+' adicionada! ✓';
+    document.getElementById('nu-name').value='';document.getElementById('nu-color').value='';document.getElementById('nu-label').value='';
+    setTimeout(function(){document.getElementById('sm-nu').textContent='';},3000);
+  });
 }
 
 function saveMetas(){
   Object.keys(pilots).forEach(function(k){var s=calcScore(pilots[k]);pilots[k].gpPts=s.total;pilots[k].totalPts=s.total;pilots[k].laps[pilots[k].laps.length-1]=s.total;});
-  document.getElementById('sm2').textContent='Metas salvas e scores recalculados!';
-  setTimeout(function(){document.getElementById('sm2').textContent='';},3000);
+  saveMetasToDB().then(function(){
+    document.getElementById('sm2').textContent='Metas salvas e scores recalculados! ✓';
+    setTimeout(function(){document.getElementById('sm2').textContent='';},3000);
+  });
 }
 
 function closeGP(){
@@ -1170,17 +1256,33 @@ function closeGP(){
   var gf=document.getElementById('cg-f').value||GPs[curGP].flag;
   var snap={};Object.keys(pilots).forEach(function(k){var p=pilots[k];var s=calcScore(p);snap[k]={leads:p.leads,leadsInd:p.leadsInd,cons:p.cons,mats:p.mats,fat:p.fat,fatC:p.fatC,gpPts:s.total,totalPts:s.total,ultVolta:p.ultVolta};});
   history[gm]={gpName:'GP DE '+gn,gpFlag:gf,etapa:GPs[curGP].etapa,pilots:snap};
+  var gpId=gm.replace('/','_');
+  dbUpsert('history',{id:gpId,gp_name:'GP DE '+gn,gp_flag:gf,etapa:GPs[curGP].etapa}).then(function(){
+    var rows=Object.keys(snap).map(function(k){var s2=snap[k];return{history_id:gpId,pilot_id:k,leads:s2.leads,leads_ind:s2.leadsInd,cons:s2.cons,mats:s2.mats,fat:s2.fat,fat_c:s2.fatC,gp_pts:s2.gpPts,total_pts:s2.totalPts,ult_volta:s2.ultVolta};});
+    supa.from('history_pilots').insert(rows);
+  });
   curGP=Math.min(curGP+1,GPs.length-1);
   Object.values(pilots).forEach(function(p){p.laps.push(calcScore(p).total);});
+  Object.keys(pilots).forEach(function(k){savePilotToDB(k);});
+  saveMetasToDB();
   buildHBar();
-  document.getElementById('sm3').textContent='GP arquivado: '+gm;setTimeout(function(){document.getElementById('sm3').textContent='';},4000);
+  document.getElementById('sm3').textContent='GP arquivado: '+gm+' ✓';setTimeout(function(){document.getElementById('sm3').textContent='';},4000);
 }
 
 function trigUp(){if(!CU||isAdm)return;document.getElementById('fup').click();}
 function hFoto(e){var f=e.target.files[0];if(!f||!CU)return;var r=new FileReader();r.onload=function(ev){avatars[CU]=ev.target.result;buildCKHdr();};r.readAsDataURL(f);}
 
-initPilots();
-buildPilotSelect();
+loadFromDB().then(function(){
+  if(Object.keys(pilots).length===0){
+    initPilots();
+    Object.keys(pilots).forEach(function(k){savePilotToDB(k);});
+    Object.keys(units).forEach(function(u){dbUpsert('units',{id:u,color:units[u].color,label:units[u].label});});
+    saveMetasToDB();
+  }
+  buildPilotSelect();
+  buildUnitBar();
+  buildHBar();
+});
 </script>
 </body>
 </html>
