@@ -385,8 +385,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
               <div class="ar"><div class="al">LEADS IND.</div><input class="ai" id="a-li" type="number"></div>
               <div class="ar"><div class="al">CONSULTORIAS</div><input class="ai" id="a-c" type="number"></div>
               <div class="ar"><div class="al">MATRÍCULAS</div><input class="ai" id="a-m" type="number"></div>
+              <div class="ar"><div class="al">FAT. BRUTO R$</div><input class="ai" id="a-f" type="number" placeholder="Ex: 83000"></div>
+              <div class="ar"><div class="al">FAT. COMISS. R$</div><input class="ai" id="a-fc" type="number" placeholder="Ex: 67000"></div>
               <div class="ar"><div class="al">ÚLT. VOLTA (pts)</div><input class="ai" id="a-uv" type="number"></div>
-              <div style="font-size:11px;color:var(--muted);font-family:var(--fm);margin-bottom:8px">* Faturamento é atualizado via Google Sheets</div>
               <button class="savbtn" onclick="saveAdmP()">SALVAR E RECALCULAR ▶</button>
               <div class="sm" id="sm1"></div>
             </div>
@@ -1090,6 +1091,8 @@ function loadAdmP(){
   document.getElementById('a-li').value=p.leadsInd;
   document.getElementById('a-c').value=p.cons;
   document.getElementById('a-m').value=p.mats;
+  document.getElementById('a-f').value=p.fat;
+  document.getElementById('a-fc').value=p.fatC;
   document.getElementById('a-uv').value=p.ultVolta;
 }
 
@@ -1099,6 +1102,8 @@ function saveAdmP(){
   p.leadsInd=parseInt(document.getElementById('a-li').value)||0;
   p.cons=parseInt(document.getElementById('a-c').value)||0;
   p.mats=Math.min(parseInt(document.getElementById('a-m').value)||0,p.cons);
+  p.fat=parseInt(document.getElementById('a-f').value)||0;
+  p.fatC=parseInt(document.getElementById('a-fc').value)||0;
   p.ultVolta=parseInt(document.getElementById('a-uv').value)||0;
   var s=calcScore(p);p.gpPts=s.total;p.totalPts=s.total;p.laps[p.laps.length-1]=s.total;
   document.getElementById('sm1').textContent='Salvo: '+p.name+' · Score: '+s.total+' pts';
