@@ -382,6 +382,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
           <button class="adm-tab" onclick="admTab('unidades',this)">UNIDADES</button>
           <button class="adm-tab" onclick="admTab('metas',this)">METAS</button>
           <button class="adm-tab" onclick="admTab('dia',this)">REGISTRAR DIA</button>
+          <button class="adm-tab" onclick="admTab('hist-manual',this)">HISTÓRICO DE VOLTAS</button>
           <button class="adm-tab" onclick="admTab('sheets',this)">GOOGLE SHEETS</button>
           <button class="adm-tab" onclick="admTab('gp',this)">FECHAR GP</button>
         </div>
@@ -487,6 +488,31 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
             <div class="ar"><div class="al">META FAT. COMISS. R$</div><input class="ai" id="m-fc" type="number" value="70000"></div>
             <button class="savbtn" onclick="saveMetas()">SALVAR METAS ▶</button>
             <div class="sm" id="sm2"></div>
+          </div>
+        </div>
+
+        <!-- HISTÓRICO DE VOLTAS MANUAL -->
+        <div class="adm-section" id="adm-hist-manual">
+          <div class="adm-grid">
+            <div class="ac">
+              <div class="at">REGISTRAR VOLTA (MÊS ANTERIOR)</div>
+              <div class="ar"><div class="al">CONSULTORA</div><select class="asel" id="hm-pilot"></select></div>
+              <div class="ar"><div class="al">MÊS/VOLTA</div><select class="asel" id="hm-month"></select></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;margin-top:4px">
+                <div><div class="al" style="width:100%;margin-bottom:4px">LEADS</div><input class="ai" id="hm-leads" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">LEADS IND.</div><input class="ai" id="hm-linds" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">CONSULTORIAS</div><input class="ai" id="hm-cons" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">MATRÍCULAS</div><input class="ai" id="hm-mats" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">FAT. BRUTO R$</div><input class="ai" id="hm-fat" type="number" value="0"></div>
+                <div><div class="al" style="width:100%;margin-bottom:4px">FAT. COMISS. R$</div><input class="ai" id="hm-fatc" type="number" value="0"></div>
+              </div>
+              <button class="savbtn" onclick="saveHistManual()">SALVAR VOLTA ▶</button>
+              <div class="sm" id="sm-hm"></div>
+            </div>
+            <div class="ac">
+              <div class="at">VOLTAS REGISTRADAS — <span id="hm-pilot-name" style="color:var(--green)">SELECIONE UMA CONSULTORA</span></div>
+              <div id="hm-history-list"><div style="color:var(--muted);font-family:var(--fm);font-size:13px">Selecione uma consultora para ver as voltas.</div></div>
+            </div>
           </div>
         </div>
 
@@ -1094,6 +1120,7 @@ function admTab(name,btn){
   if(name==='consultoras'||name==='dados')refreshAdmSelects();
   if(name==='unidades')renderUnitsList();
   if(name==='dia'){refreshDiaSelect();loadDiaHistory();}
+  if(name==='hist-manual'){refreshHMSelects();}
 }
 
 function buildGPHdr(){
@@ -1422,6 +1449,138 @@ function saveMetas(){
     document.getElementById('sm2').textContent='Metas salvas e scores recalculados! ✓';
     setTimeout(function(){document.getElementById('sm2').textContent='';},3000);
   });
+}
+
+// ============ HISTÓRICO DE VOLTAS MANUAL ============
+var MONTH_NAMES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function getAvailableMonths(){
+  // Only months up to and including current month
+  var now=new Date();
+  var curMonth=now.getMonth(); // 0-based, so June=5
+  var months=[];
+  for(var i=0;i<=curMonth;i++){
+    months.push({idx:i,name:MONTH_NAMES[i],key:(i+1).toString().padStart(2,'0')+'/2026'});
+  }
+  return months;
+}
+
+function refreshHMSelects(){
+  // Pilot select
+  var pSel=document.getElementById('hm-pilot');
+  if(pSel){
+    pSel.innerHTML=Object.keys(pilots).map(function(k){return'<option value="'+k+'">'+pilots[k].name+'</option>';}).join('');
+    pSel.onchange=function(){loadHMHistory();};
+  }
+  // Month select - only past months up to current
+  var mSel=document.getElementById('hm-month');
+  if(mSel){
+    var months=getAvailableMonths();
+    mSel.innerHTML=months.map(function(m){return'<option value="'+m.key+'">'+m.name+' 2026</option>';}).join('');
+  }
+  loadHMHistory();
+}
+
+async function loadHMHistory(){
+  var k=document.getElementById('hm-pilot').value;
+  if(!k||!pilots[k])return;
+  document.getElementById('hm-pilot-name').textContent=pilots[k].name;
+  // Load from DB
+  var res=await supa.from('manual_history').select('*').eq('pilot_id',k).order('month_idx');
+  if(res.error){console.error(res.error);return;}
+  var rows=res.data||[];
+  if(rows.length===0){
+    document.getElementById('hm-history-list').innerHTML='<div style="color:var(--muted);font-family:var(--fm);font-size:13px">Nenhuma volta registrada ainda.</div>';
+    return;
+  }
+  var col=pc(k);
+  var html='<div style="display:flex;flex-direction:column;gap:4px;max-height:360px;overflow-y:auto">';
+  rows.forEach(function(r){
+    var s=calcScoreFromValues(r.leads,r.leads_ind,r.cons,r.mats,r.fat,r.fat_c);
+    var fc=s>=80?'var(--green)':s>=60?'var(--yellow)':'var(--red)';
+    html+='<div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border-radius:6px;padding:8px 12px">'+
+      '<span style="font-family:var(--fh);font-weight:700;font-size:13px;color:'+col+';width:80px;flex-shrink:0">'+MONTH_NAMES[r.month_idx]+'</span>'+
+      '<span style="flex:1;font-family:var(--fm);font-size:11px;color:var(--muted)">L:'+r.leads+' Li:'+r.leads_ind+' C:'+r.cons+' M:'+r.mats+'</span>'+
+      '<span style="font-family:var(--fm);font-size:11px;color:var(--green);margin-right:6px">R$'+Math.round((r.fat+r.fat_c)/1000)+'k</span>'+
+      '<span style="font-family:var(--fh);font-size:18px;font-weight:900;color:'+fc+'">'+s+'</span>'+
+      '<button onclick="loadHMForEdit(''+k+'','+r.month_idx+')" style="background:var(--bg4);border:1px solid var(--border);color:var(--muted);font-family:var(--fh);font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;margin-left:4px">EDITAR</button>'+
+    '</div>';
+  });
+  html+='</div>';
+  document.getElementById('hm-history-list').innerHTML=html;
+}
+
+async function loadHMForEdit(pilotKey,monthIdx){
+  var res=await supa.from('manual_history').select('*').eq('pilot_id',pilotKey).eq('month_idx',monthIdx).single();
+  if(res.error||!res.data)return;
+  var r=res.data;
+  // Set pilot select
+  var pSel=document.getElementById('hm-pilot');
+  if(pSel)pSel.value=pilotKey;
+  // Set month select
+  var mSel=document.getElementById('hm-month');
+  if(mSel){var key=(monthIdx+1).toString().padStart(2,'0')+'/2026';mSel.value=key;}
+  // Fill fields
+  document.getElementById('hm-leads').value=r.leads||0;
+  document.getElementById('hm-linds').value=r.leads_ind||0;
+  document.getElementById('hm-cons').value=r.cons||0;
+  document.getElementById('hm-mats').value=r.mats||0;
+  document.getElementById('hm-fat').value=r.fat||0;
+  document.getElementById('hm-fatc').value=r.fat_c||0;
+}
+
+async function saveHistManual(){
+  var k=document.getElementById('hm-pilot').value;
+  var monthKey=document.getElementById('hm-month').value;
+  if(!k||!pilots[k]){document.getElementById('sm-hm').textContent='Selecione uma consultora';return;}
+  if(!monthKey){document.getElementById('sm-hm').textContent='Selecione um mês';return;}
+  var monthIdx=parseInt(monthKey.split('/')[0])-1;
+  var data={
+    pilot_id:k,
+    month_idx:monthIdx,
+    month_name:MONTH_NAMES[monthIdx],
+    leads:parseInt(document.getElementById('hm-leads').value)||0,
+    leads_ind:parseInt(document.getElementById('hm-linds').value)||0,
+    cons:parseInt(document.getElementById('hm-cons').value)||0,
+    mats:parseInt(document.getElementById('hm-mats').value)||0,
+    fat:parseInt(document.getElementById('hm-fat').value)||0,
+    fat_c:parseInt(document.getElementById('hm-fatc').value)||0
+  };
+  var res=await supa.from('manual_history').upsert(data,{onConflict:'pilot_id,month_idx'});
+  if(res.error){console.error(res.error);document.getElementById('sm-hm').textContent='Erro ao salvar!';return;}
+  // Update pilot laps array with this month score
+  var score=calcScoreFromValues(data.leads,data.leads_ind,data.cons,data.mats,data.fat,data.fat_c);
+  if(!pilots[k].laps)pilots[k].laps=[0,0,0,0,0];
+  if(monthIdx<pilots[k].laps.length){pilots[k].laps[monthIdx]=score;}
+  else{while(pilots[k].laps.length<=monthIdx)pilots[k].laps.push(0);pilots[k].laps[monthIdx]=score;}
+  await savePilotToDB(k);
+  document.getElementById('sm-hm').textContent=MONTH_NAMES[monthIdx]+' salvo! Score: '+score+' pts ✓';
+  setTimeout(function(){document.getElementById('sm-hm').textContent='';},3000);
+  loadHMHistory();
+  // Refresh laps chart
+  if(document.getElementById('panel-ck').classList.contains('on'))buildLaps();
+}
+
+function calcScoreFromValues(leads,leadsInd,cons,mats,fat,fatC){
+  var ml=parseInt(document.getElementById('m-l').value)||300;
+  var mli=parseInt(document.getElementById('m-li').value)||150;
+  var mc=parseInt(document.getElementById('m-c').value)||50;
+  var mm=parseInt(document.getElementById('m-m').value)||20;
+  var mtl=parseFloat(document.getElementById('m-txl').value)||20;
+  var mtc=parseFloat(document.getElementById('m-txc').value)||40;
+  var mf=parseInt(document.getElementById('m-f').value)||80000;
+  var mfc=parseInt(document.getElementById('m-fc').value)||70000;
+  var ptL=Math.floor(leads/(ml/10));
+  var ptLi=Math.floor(leadsInd/(mli/10));
+  var ptC=Math.floor(cons/(mc/10));
+  var ptM=Math.floor(mats/(mm/10));
+  var txl=cons>0&&leads>0?(cons/leads*100):0;
+  var txc=mats>0&&cons>0?(mats/cons*100):0;
+  var ptTxL=txl>=mtl?20:0;
+  var ptTxC=txc>=mtc?20:0;
+  var ptF=Math.floor(fat/(mf/10));
+  var ptFc=Math.floor(fatC/(mfc/10));
+  return ptL+ptLi+ptC+ptM+ptTxL+ptTxC+ptF+ptFc;
 }
 
 function closeGP(){
