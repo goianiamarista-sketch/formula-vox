@@ -1505,7 +1505,7 @@ async function loadHMHistory(){
       '<span style="flex:1;font-family:var(--fm);font-size:11px;color:var(--muted)">L:'+r.leads+' Li:'+r.leads_ind+' C:'+r.cons+' M:'+r.mats+'</span>'+
       '<span style="font-family:var(--fm);font-size:11px;color:var(--green);margin-right:6px">R$'+Math.round((r.fat+r.fat_c)/1000)+'k</span>'+
       '<span style="font-family:var(--fh);font-size:18px;font-weight:900;color:'+fc+'">'+s+'</span>'+
-      '<button onclick="loadHMForEdit(''+k+'','+r.month_idx+')" style="background:var(--bg4);border:1px solid var(--border);color:var(--muted);font-family:var(--fh);font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;margin-left:4px">EDITAR</button>'+
+      '<button data-k="'+k+'" data-m="'+r.month_idx+'" onclick="var b=this;loadHMForEdit(b.dataset.k,parseInt(b.dataset.m))" style="background:var(--bg4);border:1px solid var(--border);color:var(--muted);font-family:var(--fh);font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;margin-left:4px">EDITAR</button>'+
     '</div>';
   });
   html+='</div>';
