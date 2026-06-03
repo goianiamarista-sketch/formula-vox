@@ -626,9 +626,11 @@ var supa=supabase.createClient('https://yimvkpgfbwepsuqnsmhn.supabase.co','eyJhb
 function showLoading(v){var el=document.getElementById('loading-overlay');if(el)el.style.display=v?'flex':'none';}
 
 async function dbGet(table){
-  var res=await supa.from(table).select('*');
-  if(res.error){console.error(table,res.error);return [];}
-  return res.data||[];
+  try{
+    var res=await supa.from(table).select('*');
+    if(res.error){console.error(table,res.error);return [];}
+    return res.data||[];
+  }catch(e){console.error('dbGet error',table,e);return [];}
 }
 async function dbUpsert(table,obj){
   var res=await supa.from(table).upsert(obj,{onConflict:'id'});
