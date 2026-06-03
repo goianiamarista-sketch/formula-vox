@@ -553,9 +553,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
               <div style="font-size:12px;color:var(--muted);font-family:var(--fb);margin-bottom:14px;line-height:1.7">
                 Cole o ID da sua planilha Google Sheets abaixo. O site vai buscar automaticamente os dados de <b style="color:var(--green)">Faturamento Bruto</b> e <b style="color:var(--green)">Faturamento Comissionado</b> de cada consultora.
               </div>
-              <div class="ar"><div class="al">SHEET ID</div><input class="ai" id="sheet-id" type="text" placeholder="Cole o ID da planilha aqui"></div>
-              <div class="ar"><div class="al">ABA (sheet name)</div><input class="ai" id="sheet-name" type="text" placeholder="Ex: Faturamento" value="Faturamento"></div>
-              <div class="ar"><div class="al">API KEY</div><input class="ai" id="sheet-key" type="text" placeholder="Cole sua Google API Key"></div>
+              <div class="ar"><div class="al">SHEET ID</div><input class="ai" id="sheet-id" type="text" value="1uf-iFiDTEGBsr59S9vwcDV0vU-8O_8S4MUbctfayYR8"></div>
+              <div class="ar"><div class="al">ABA ATUAL</div><input class="ai" id="sheet-name" type="text" value="DB_ATUAL"></div>
+              <div class="ar"><div class="al">ABA HISTÓRICO</div><input class="ai" id="sheet-name-hist" type="text" value="DB_HIST"></div>
+              <div class="ar"><div class="al">ABA DIÁRIO</div><input class="ai" id="sheet-name-diario" type="text" value="DB_DIARIO"></div>
+              <div class="ar"><div class="al">API KEY</div><input class="ai" id="sheet-key" type="text" value="AIzaSyCvTW0aiF61hoRRUIgz5RECzdFoF9e2D_I"></div>
               <button class="savbtn" onclick="saveSheetConfig()">SALVAR CONFIGURAÇÃO ▶</button>
               <button class="savbtn" style="background:#1976d2;margin-left:8px" onclick="fetchSheets()">SINCRONIZAR AGORA ▶</button>
               <div class="sm" id="sm-sheets"></div>
@@ -846,45 +848,228 @@ function saveSheetConfig(){
 }
 
 function fetchSheets(){
-  if(!sheetConfig.id||!sheetConfig.key){
+  var id=document.getElementById('sheet-id').value.trim();
+  var key=document.getElementById('sheet-key').value.trim();
+  var nameAtual=document.getElementById('sheet-name').value.trim()||'DB_ATUAL';
+  var nameHist=(document.getElementById('sheet-name-hist')||{}).value||'DB_HIST';
+  if(!id||!key){
     document.getElementById('sm-sheets').textContent='Configure o Sheet ID e a API Key primeiro.';
     setTimeout(function(){document.getElementById('sm-sheets').textContent='';},4000);
     return;
   }
+  sheetConfig={id:id,name:nameAtual,key:key};
   setSheetStatus('loading','Sincronizando com Google Sheets...');
-  var range=encodeURIComponent(sheetConfig.name+'!A1:Z10');
-  var url='https://sheets.googleapis.com/v4/spreadsheets/'+sheetConfig.id+'/values/'+range+'?key='+sheetConfig.key;
-  fetch(url)
+
+  // Fetch DB_ATUAL
+  var rangeAtual=encodeURIComponent(nameAtual+'!A1:H20');
+  var urlAtual='https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values/'+rangeAtual+'?key='+key;
+  
+  fetch(urlAtual)
     .then(function(r){return r.json();})
     .then(function(data){
-      if(!data.values||data.values.length<3){
-        setSheetStatus('err','Planilha inválida. Verifique o formato.');
+      if(!data.values||data.values.length<2){
+        setSheetStatus('err','DB_ATUAL vazia ou formato incorreto.');
         return;
       }
-      var headers=data.values[0];
-      var fatRow=data.values[1];
-      var fatCRow=data.values[2];
+      var rows=data.values;
+      var headers=rows[0].map(function(h){return h.toString().toUpperCase().trim();});
+      var iCons=headers.indexOf('CONSULTORA');
+      var iLead=headers.indexOf('LEADS');
+      var iLind=headers.indexOf('LEADS IND.');
+      var iCon=headers.indexOf('CONSULTORIAS');
+      var iMat=headers.indexOf('MATRICULAS');
+      var iFat=headers.indexOf('FAT. BRUTO (R$)');
+      var iFatC=headers.indexOf('FAT. COMISSIONADO (R$)');
       var updated=0;
-      Object.keys(pilots).forEach(function(k){
-        var pName=pilots[k].name;
-        headers.forEach(function(h,i){
-          if(h.toUpperCase().includes(pName.split(' ')[0].toUpperCase())||pName.toUpperCase().includes(h.toUpperCase())){
-            var fatVal=parseFloat((fatRow[i]||'0').replace(/[^0-9.]/g,''))||0;
-            var fatCVal=parseFloat((fatCRow[i]||'0').replace(/[^0-9.]/g,''))||0;
-            pilots[k].fat=fatVal;
-            pilots[k].fatC=fatCVal;
+      
+      for(var r=1;r<rows.length;r++){
+        var row=rows[r];
+        var sheetName=(row[iCons]||'').toString().toUpperCase().trim();
+        if(!sheetName)continue;
+        
+        Object.keys(pilots).forEach(function(k){
+          var pName=pilots[k].name.toUpperCase().trim();
+          var firstName=pName.split(' ')[0];
+          if(sheetName===pName||sheetName.includes(firstName)||pName.includes(sheetName.split(' ')[0])){
+            var pv=function(i){return i>=0?parseFloat((row[i]||'0').toString().replace(/[^0-9.,]/g,'').replace(',','.'))||0:0;};
+            pilots[k].leads=pv(iLead)||pilots[k].leads;
+            pilots[k].leadsInd=pv(iLind)||pilots[k].leadsInd;
+            pilots[k].cons=pv(iCon)||pilots[k].cons;
+            pilots[k].mats=pv(iMat)||pilots[k].mats;
+            pilots[k].fat=pv(iFat)||pilots[k].fat;
+            pilots[k].fatC=pv(iFatC)||pilots[k].fatC;
             var s=calcScore(pilots[k]);
             pilots[k].gpPts=s.total;pilots[k].totalPts=s.total;
             pilots[k].laps[pilots[k].laps.length-1]=s.total;
+            savePilotToDB(k);
             updated++;
           }
         });
-      });
-      setSheetStatus('ok','Sincronizado! '+updated+' consultoras atualizadas — '+new Date().toLocaleTimeString('pt-BR'));
+      }
+      
+      // Now fetch DB_HIST
+      fetchSheetsHist(id,key,nameHist,updated);
+  // Also fetch daily records
+  var nameDiario=(document.getElementById('sheet-name-diario')||{value:'DB_DIARIO'}).value||'DB_DIARIO';
+  fetchSheetsDiario(id,key,nameDiario);
     })
     .catch(function(err){
-      setSheetStatus('err','Erro ao conectar: '+err.message);
+      setSheetStatus('err','Erro DB_ATUAL: '+err.message);
     });
+}
+
+function fetchSheetsHist(id,key,nameHist,updatedAtual){
+  var rangeHist=encodeURIComponent(nameHist+'!A1:I200');
+  var urlHist='https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values/'+rangeHist+'?key='+key;
+  
+  fetch(urlHist)
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(!data.values||data.values.length<2){
+        setSheetStatus('ok','DB_ATUAL: '+updatedAtual+' consultoras ✓ · DB_HIST: vazia — '+new Date().toLocaleTimeString('pt-BR'));
+        return;
+      }
+      var rows=data.values;
+      var headers=rows[0].map(function(h){return h.toString().toUpperCase().trim();});
+      var iMes=headers.indexOf('MES');
+      var iCons=headers.indexOf('CONSULTORA');
+      var iLead=headers.indexOf('LEADS');
+      var iLind=headers.indexOf('LEADS IND.');
+      var iCon=headers.indexOf('CONSULTORIAS');
+      var iMat=headers.indexOf('MATRICULAS');
+      var iFat=headers.indexOf('FAT. BRUTO (R$)');
+      var iFatC=headers.indexOf('FAT. COMISSIONADO (R$)');
+      var MONTH_NAMES_UP=['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+      var updatedHist=0;
+      
+      var histPromises=[];
+      for(var r=1;r<rows.length;r++){
+        var row=rows[r];
+        var mes=(row[iMes]||'').toString().toUpperCase().trim();
+        var sheetName=(row[iCons]||'').toString().toUpperCase().trim();
+        if(!mes||!sheetName)continue;
+        var monthIdx=MONTH_NAMES_UP.indexOf(mes);
+        if(monthIdx<0)continue;
+        
+        Object.keys(pilots).forEach(function(k){
+          var pName=pilots[k].name.toUpperCase().trim();
+          var firstName=pName.split(' ')[0];
+          if(sheetName===pName||sheetName.includes(firstName)||pName.includes(sheetName.split(' ')[0])){
+            var pv=function(i){return i>=0?parseFloat((row[i]||'0').toString().replace(/[^0-9.,]/g,'').replace(',','.'))||0:0;};
+            var data2={
+              pilot_id:k,month_idx:monthIdx,month_name:mes,
+              leads:pv(iLead),leads_ind:pv(iLind),cons:pv(iCon),
+              mats:pv(iMat),fat:pv(iFat),fat_c:pv(iFatC)
+            };
+            histPromises.push(
+              supa.from('manual_history').upsert(data2,{onConflict:'pilot_id,month_idx'}).then(function(){
+                var score=calcScoreFromValues(data2.leads,data2.leads_ind,data2.cons,data2.mats,data2.fat,data2.fat_c);
+                if(!pilots[k].laps)pilots[k].laps=[0,0,0,0,0];
+                while(pilots[k].laps.length<=monthIdx)pilots[k].laps.push(0);
+                pilots[k].laps[monthIdx]=score;
+                savePilotToDB(k);
+              })
+            );
+            updatedHist++;
+          }
+        });
+      }
+      
+      Promise.all(histPromises).then(function(){
+        setSheetStatus('ok','Sincronizado! Atual: '+updatedAtual+' · Histórico: '+updatedHist+' registros ✓ — '+new Date().toLocaleTimeString('pt-BR'));
+      });
+    })
+    .catch(function(err){
+      setSheetStatus('ok','DB_ATUAL: '+updatedAtual+' ✓ · DB_HIST erro: '+err.message);
+    });
+}
+
+function fetchSheetsDiario(id, key, nameDiario){
+  var rangeDiario=encodeURIComponent(nameDiario+'!A1:I999');
+  var urlDiario='https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values/'+rangeDiario+'?key='+key;
+  
+  fetch(urlDiario)
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(!data.values||data.values.length<2)return;
+      var rows=data.values;
+      var headers=rows[0].map(function(h){return h.toString().toUpperCase().trim();});
+      var iDay=headers.indexOf('DIA');
+      var iCons=headers.indexOf('CONSULTORA');
+      var iLead=headers.indexOf('LEADS');
+      var iLind=headers.indexOf('LEADS IND.');
+      var iCon=headers.indexOf('CONSULTORIAS');
+      var iMat=headers.indexOf('MATRICULAS');
+      var iFat=headers.indexOf('FAT. BRUTO (R$)');
+      var iFatC=headers.indexOf('FAT. COMISSIONADO (R$)');
+      
+      // Group by pilot
+      var pilotDays={};
+      for(var r=1;r<rows.length;r++){
+        var row=rows[r];
+        var dayVal=parseInt(row[iDay])||0;
+        var sheetName=(row[iCons]||'').toString().toUpperCase().trim();
+        if(!sheetName||!dayVal||dayVal<1||dayVal>30)continue;
+        
+        Object.keys(pilots).forEach(function(k){
+          var pName=pilots[k].name.toUpperCase().trim();
+          var firstName=pName.split(' ')[0];
+          if(sheetName===pName||sheetName.includes(firstName)||pName.includes(sheetName.split(' ')[0])){
+            if(!pilotDays[k])pilotDays[k]={};
+            var pv=function(i){return i>=0?parseFloat((row[i]||'0').toString().replace(/[^0-9.,]/g,'').replace(',','.'))||0:0;};
+            pilotDays[k][dayVal]={
+              leads:pv(iLead),linds:pv(iLind),cons:pv(iCon),
+              mats:pv(iMat),fat:pv(iFat),fatc:pv(iFatC)
+            };
+          }
+        });
+      }
+      
+      // Save daily records and recalculate totals
+      var promises=[];
+      Object.keys(pilotDays).forEach(function(k){
+        var days=pilotDays[k];
+        var allDayVals=Object.values(days);
+        if(!dailyRecords[k])dailyRecords[k]={};
+        
+        Object.keys(days).forEach(function(d){
+          dailyRecords[k][d]=days[d];
+          promises.push(
+            supa.from('daily_records').upsert({
+              pilot_id:k,day:parseInt(d),
+              leads:days[d].leads,leads_ind:days[d].linds,
+              cons:days[d].cons,mats:days[d].mats,
+              fat:days[d].fat,fat_c:days[d].fatc
+            },{onConflict:'pilot_id,day'})
+          );
+        });
+        
+        // Recalc totals
+        var p=pilots[k];
+        p.leads=allDayVals.reduce(function(a,d){return a+(d.leads||0);},0);
+        p.leadsInd=allDayVals.reduce(function(a,d){return a+(d.linds||0);},0);
+        p.cons=allDayVals.reduce(function(a,d){return a+(d.cons||0);},0);
+        p.mats=allDayVals.reduce(function(a,d){return a+(d.mats||0);},0);
+        p.fat=allDayVals.reduce(function(a,d){return a+(d.fat||0);},0);
+        p.fatC=allDayVals.reduce(function(a,d){return a+(d.fatc||0);},0);
+        
+        // Last volta = score of most recent day
+        var lastDay=Math.max.apply(null,Object.keys(days).map(Number));
+        p.ultVolta=calcDayScore(days[lastDay]);
+        
+        // Telemetry wave
+        var wave=[];
+        for(var i=1;i<=30;i++){var dr=days[i];wave.push(dr?calcDayScore(dr):0);}
+        p.dailyWave=wave;
+        
+        savePilotToDB(k);
+      });
+      
+      Promise.all(promises).then(function(){
+        console.log('DB_DIARIO sincronizado!');
+      });
+    })
+    .catch(function(err){console.error('DB_DIARIO erro:',err);});
 }
 
 function setSheetStatus(type,msg){
@@ -896,7 +1081,9 @@ function setSheetStatus(type,msg){
 
 // Auto-sync a cada 5 minutos se configurado
 setInterval(function(){
-  if(sheetConfig.id&&sheetConfig.key)fetchSheets();
+  var id=document.getElementById('sheet-id');
+  var key=document.getElementById('sheet-key');
+  if(id&&key&&id.value&&key.value)fetchSheets();
 },5*60*1000);
 
 function buildUnitBar(){
