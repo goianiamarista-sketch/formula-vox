@@ -1059,7 +1059,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
               <div style="font-size:12px;color:var(--muted);font-family:var(--fb);margin-bottom:14px;line-height:1.7">
                 Cole o ID da sua planilha Google Sheets abaixo. O site vai buscar automaticamente os dados de <b style="color:var(--green)">Faturamento Bruto</b> e <b style="color:var(--green)">Faturamento Comissionado</b> de cada consultora.
               </div>
-              <div class="ar"><div class="al">SHEET ID</div><input class="ai" id="sheet-id" type="text" value="1sy-qtFXBwE8-qZcPefcbAtiY0cPxll0n8JhPMWA7lko"></div>
+              <div class="ar"><div class="al">SHEET ID</div><input class="ai" id="sheet-id" type="text" value="1sy-qtFXBwE8-qZcPefcbAtiY0cPxII0n8JhPMWA7lko"></div>
               <div class="ar"><div class="al">ABA ATUAL</div><input class="ai" id="sheet-name" type="text" value="DB_ATUAL"></div>
               <div class="ar"><div class="al">ABA HISTÓRICO</div><input class="ai" id="sheet-name-hist" type="text" value="DB_HIST"></div>
               <div class="ar"><div class="al">ABA DIÁRIO</div><input class="ai" id="sheet-name-diario" type="text" value="DB_DIARIO"></div>
@@ -1378,7 +1378,13 @@ function fetchSheets(){
         return;
       }
       var rows=data.values;
-      var headers=rows[0].map(function(h){return h.toString().toUpperCase().trim();});
+      // Find header row (contains CONSULTORA)
+      var headerRowIdx=0;
+      for(var ri=0;ri<rows.length;ri++){
+        var rowStr=rows[ri].join(',').toUpperCase();
+        if(rowStr.indexOf('CONSULTORA')>=0){headerRowIdx=ri;break;}
+      }
+      var headers=rows[headerRowIdx].map(function(h){return h.toString().toUpperCase().trim();});
       var iCons=headers.indexOf('CONSULTORA');
       var iLead=headers.indexOf('LEADS');
       var iLind=headers.indexOf('LEADS IND.');
@@ -1388,7 +1394,7 @@ function fetchSheets(){
       var iFatC=headers.indexOf('FAT. COMISSIONADO (R$)');
       var updated=0;
       
-      for(var r=1;r<rows.length;r++){
+      for(var r=headerRowIdx+1;r<rows.length;r++){
         var row=rows[r];
         var sheetName=(row[iCons]||'').toString().toUpperCase().trim();
         if(!sheetName)continue;
